@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camu Health — Call Analysis Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;color:#1a1a2e;font-size:13px}
+
+.hdr{background:linear-gradient(135deg,#1a1a2e 0%,#2d3561 100%);color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.hdr h1{font-size:19px;font-weight:600}
+.hdr .sub{font-size:11px;opacity:.7;margin-top:2px}
+.hdr .badge{background:rgba(255,255,255,.15);padding:4px 12px;border-radius:16px;font-size:11px}
+
+.layout{display:flex;height:calc(100vh - 56px)}
+.sidebar{width:220px;background:#fff;border-right:1px solid #e2e8f0;padding:14px 0;flex-shrink:0;overflow-y:auto}
+.sidebar h3{padding:0 14px;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:8px;margin-top:12px}
+.sidebar h3:first-child{margin-top:0}
+.nav-item{padding:8px 14px;cursor:pointer;font-size:12px;border-left:3px solid transparent;transition:all .15s;display:flex;justify-content:space-between;align-items:center}
+.nav-item:hover{background:#f8fafc}
+.nav-item.active{background:#eff6ff;border-left-color:#3b82f6;color:#1d4ed8;font-weight:600}
+.nav-item .cnt{font-size:9px;background:#e2e8f0;padding:1px 6px;border-radius:8px;color:#64748b}
+.nav-item.active .cnt{background:#dbeafe;color:#3b82f6}
+.sec-item{padding:7px 14px;cursor:pointer;font-size:11px;color:#64748b;transition:all .15s;border-left:3px solid transparent}
+.sec-item:hover{background:#f8fafc;color:#334155}
+.sec-item.active{color:#7c3aed;border-left-color:#7c3aed;font-weight:600;background:#faf5ff}
+
+.main{flex:1;padding:18px 24px;overflow-y:auto}
+
+/* Date toggle bar */
+.date-bar{background:#fff;border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.date-bar .label{font-size:11px;color:#64748b;font-weight:600;margin-right:4px}
+.date-btn{padding:5px 12px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;font-size:11px;transition:all .15s;color:#334155}
+.date-btn:hover{background:#f1f5f9}
+.date-btn.active{background:#3b82f6;color:#fff;border-color:#3b82f6}
+
+/* Upload bar */
+.upload-bar{background:#fff;border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.upload-bar label{font-size:11px;color:#64748b;font-weight:600}
+.upload-bar input[type="file"]{font-size:11px}
+.upload-bar button{padding:5px 16px;border-radius:6px;border:none;background:#3b82f6;color:#fff;cursor:pointer;font-size:11px;font-weight:600}
+.upload-bar button:hover{background:#2563eb}
+.upload-bar .status{font-size:11px;color:#64748b}
+
+/* KPI cards */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:#fff;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.kpi .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px}
+.kpi .kpi-value{font-size:22px;font-weight:700;color:#1a1a2e}
+.kpi .kpi-delta{font-size:10px;margin-top:2px}
+.kpi .kpi-delta.up{color:#16a34a}
+.kpi .kpi-delta.down{color:#dc2626}
+.kpi .kpi-delta.neutral{color:#94a3b8}
+
+/* Section cards */
+.section{background:#fff;border-radius:10px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.section h2{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section h2 .icon{font-size:16px}
+
+/* Insights */
+.insight{padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:12px;line-height:1.5}
+.insight.success{background:#f0fdf4;border-left:3px solid #16a34a;color:#15803d}
+.insight.info{background:#eff6ff;border-left:3px solid #3b82f6;color:#1d4ed8}
+.insight.warning{background:#fffbeb;border-left:3px solid #f59e0b;color:#b45309}
+.insight.danger{background:#fef2f2;border-left:3px solid #dc2626;color:#b91c1c}
+.action-item{padding:8px 12px;background:#f8fafc;border-radius:6px;margin-bottom:6px;font-size:12px;display:flex;align-items:center;gap:8px}
+.action-item::before{content:"→";color:#3b82f6;font-weight:700}
+
+/* Follow-up queue */
+.fq-table{width:100%;border-collapse:collapse;font-size:11px}
+.fq-table th{text-align:left;padding:8px 10px;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+.fq-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9}
+.staleness-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.staleness-dot.fresh{background:#16a34a}
+.staleness-dot.aging{background:#f59e0b}
+.staleness-dot.stale{background:#dc2626}
+
+/* Charts */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.chart-box{background:#f8fafc;border-radius:8px;padding:14px}
+.chart-box h3{font-size:12px;font-weight:600;margin-bottom:10px;color:#334155}
+.chart-box canvas{width:100%!important;max-height:260px}
+@media(max-width:900px){.chart-grid{grid-template-columns:1fr}}
+
+/* Outcome pills */
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap}
+
+/* Call detail table */
+.cd-controls{display:flex;gap:10px;margin-bottom:12px;align-items:center}
+.cd-controls input{flex:1;padding:7px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px}
+.cd-controls input:focus{outline:none;border-color:#3b82f6}
+.cd-table{width:100%;border-collapse:collapse;font-size:11px}
+.cd-table th{text-align:left;padding:8px 10px;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:#fff}
+.cd-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.cd-table tr:hover{background:#f8fafc}
+.cd-summary{font-size:11px;color:#64748b;max-width:300px;line-height:1.4}
+.pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-size:11px}
+.pagination button{padding:4px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;cursor:pointer;font-size:11px}
+.pagination button:disabled{opacity:.4;cursor:default}
+.pagination button:hover:not(:disabled){background:#f1f5f9}
+
+/* Time of day heatmap */
+.tod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:6px}
+.tod-cell{border-radius:6px;padding:8px;text-align:center;font-size:10px}
+.tod-cell .hour{font-weight:700;font-size:12px}
+.tod-cell .stats{margin-top:2px;opacity:.8}
+
+/* Script comparison */
+.script-table{width:100%;border-collapse:collapse;font-size:11px}
+.script-table th{text-align:left;padding:8px 10px;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:10px;text-transform:uppercase}
+.script-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9}
+.winner-badge{background:#f0fdf4;color:#16a34a;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700}
+
+.loading{text-align:center;padding:40px;color:#94a3b8;font-size:13px}
+.empty-state{text-align:center;padding:30px;color:#94a3b8;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <h1>Camu Health — Call Analysis Dashboard</h1>
+    <div class="sub">Confido Call Center Analytics</div>
+  </div>
+  <div class="badge" id="totalBadge">Loading...</div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <h3>Workflow Groups</h3>
+    <div id="groupNav"></div>
+    <h3>Sections</h3>
+    <div id="sectionNav"></div>
+  </div>
+
+  <div class="main" id="mainContent">
+    <!-- Upload bar -->
+    <div class="upload-bar">
+      <label>Upload CSV:</label>
+      <input type="file" id="csvFile" accept=".csv,.xlsx,.xls">
+      <button onclick="uploadCSV()">Ingest</button>
+      <span class="status" id="uploadStatus"></span>
+    </div>
+
+    <!-- Date toggle bar -->
+    <div class="date-bar">
+      <span class="label">Date:</span>
+      <div id="dateButtons"></div>
+    </div>
+
+    <!-- KPI Row -->
+    <div class="kpi-row" id="kpiRow"></div>
+
+    <!-- Insights -->
+    <div class="section" id="sec-insights">
+      <h2><span class="icon">💡</span> Action Items & Insights</h2>
+      <div id="insightsContent"></div>
+    </div>
+
+    <!-- Follow-up Queue -->
+    <div class="section" id="sec-followup">
+      <h2><span class="icon">📋</span> Follow-Up Queue</h2>
+      <div id="followupContent"></div>
+    </div>
+
+    <!-- Charts -->
+    <div class="section" id="sec-charts">
+      <h2><span class="icon">📊</span> Charts & Trends</h2>
+      <div class="chart-grid">
+        <div class="chart-box"><h3>Conversion Rate Trend</h3><canvas id="convChart"></canvas></div>
+        <div class="chart-box"><h3>Daily Call Volume</h3><canvas id="volChart"></canvas></div>
+        <div class="chart-box"><h3>Outcome Distribution</h3><canvas id="donutChart"></canvas></div>
+        <div class="chart-box"><h3>Sub-Category Breakdown</h3><canvas id="subChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Time of Day -->
+    <div class="section" id="sec-tod">
+      <h2><span class="icon">🕐</span> Time-of-Day Analysis</h2>
+      <div id="todContent"></div>
+    </div>
+
+    <!-- Script Comparison -->
+    <div class="section" id="sec-scripts">
+      <h2><span class="icon">📝</span> Script & Template Comparison</h2>
+      <div id="scriptsContent"></div>
+    </div>
+
+    <!-- Call Details -->
+    <div class="section" id="sec-calls">
+      <h2><span class="icon">📞</span> Call Details</h2>
+      <div class="cd-controls">
+        <input type="text" id="searchInput" placeholder="Search by name, EHR ID, outcome..." oninput="debounceSearch()">
+      </div>
+      <div id="callsContent"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin + '/api';
+let currentGroup = 'All';
+let currentDate = 'all';
+let currentPage = 1;
+let searchTerm = '';
+let searchTimeout = null;
+let charts = {};
+
+const OUTCOME_COLORS = {
+  "Accepted appointment": "#C6EFCE",
+  "Rejected appointment": "#FFC7CE",
+  "Requested callback": "#FFEB9C",
+  "Voicemail left": "#BDD7EE",
+  "Other - No answer/Hangup": "#D9D9D9",
+  "Other - Language barrier": "#E2EFDA",
+  "Other - Wrong number/Deceased": "#F2DCDB",
+  "Other - Engaged/Inconclusive": "#FCE4D6",
+  "Other - Patient relocated": "#F2DCDB",
+  "Other - Third party answered": "#FCE4D6",
+  "Other - Inconclusive": "#D9D9D9",
+};
+
+const OUTCOME_CHART_COLORS = {
+  "Accepted appointment": "#22c55e",
+  "Rejected appointment": "#ef4444",
+  "Requested callback": "#f59e0b",
+  "Voicemail left": "#3b82f6",
+  "Other - No answer/Hangup": "#94a3b8",
+  "Other - Language barrier": "#84cc16",
+  "Other - Wrong number/Deceased": "#f87171",
+  "Other - Engaged/Inconclusive": "#fb923c",
+  "Other - Patient relocated": "#f87171",
+  "Other - Third party answered": "#fb923c",
+  "Other - Inconclusive": "#cbd5e1",
+};
+
+const SECTIONS = [
+  {id: 'insights', label: 'Action Items & Insights'},
+  {id: 'followup', label: 'Follow-Up Queue'},
+  {id: 'charts', label: 'Charts & Trends'},
+  {id: 'tod', label: 'Time-of-Day'},
+  {id: 'scripts', label: 'Script Comparison'},
+  {id: 'calls', label: 'Call Details'},
+];
+
+let visibleSections = new Set(SECTIONS.map(s => s.id));
+
+// ========== INIT ==========
+async function init() {
+  renderSectionNav();
+  await Promise.all([loadGroups(), loadDates()]);
+  refreshAll();
+}
+
+// ========== SIDEBAR ==========
+async function loadGroups() {
+  const groups = await fetchJSON(`${API}/groups`);
+  const nav = document.getElementById('groupNav');
+  let total = groups.reduce((s, g) => s + g.count, 0);
+
+  let html = `<div class="nav-item ${currentGroup === 'All' ? 'active' : ''}" onclick="selectGroup('All')">
+    All Groups <span class="cnt">${total}</span></div>`;
+  for (const g of groups) {
+    html += `<div class="nav-item ${currentGroup === g.group ? 'active' : ''}" onclick="selectGroup('${g.group}')">
+      ${g.group} <span class="cnt">${g.count}</span></div>`;
+  }
+  nav.innerHTML = html;
+  document.getElementById('totalBadge').textContent = `${total} total calls`;
+}
+
+function renderSectionNav() {
+  const nav = document.getElementById('sectionNav');
+  nav.innerHTML = SECTIONS.map(s =>
+    `<div class="sec-item ${visibleSections.has(s.id) ? 'active' : ''}" onclick="toggleSection('${s.id}')">${s.label}</div>`
+  ).join('');
+}
+
+function selectGroup(group) {
+  currentGroup = group;
+  currentPage = 1;
+  loadGroups();
+  refreshAll();
+}
+
+function toggleSection(id) {
+  if (visibleSections.has(id)) visibleSections.delete(id);
+  else visibleSections.add(id);
+  renderSectionNav();
+  document.getElementById(`sec-${id}`).style.display = visibleSections.has(id) ? '' : 'none';
+}
+
+// ========== DATE BAR ==========
+async function loadDates() {
+  const dates = await fetchJSON(`${API}/dates`);
+  const container = document.getElementById('dateButtons');
+  let html = `<button class="date-btn ${currentDate === 'all' ? 'active' : ''}" onclick="selectDate('all')">All Days</button>`;
+  for (const d of dates) {
+    const label = formatDateShort(d);
+    html += `<button class="date-btn ${currentDate === d ? 'active' : ''}" onclick="selectDate('${d}')">${label}</button>`;
+  }
+  container.innerHTML = html;
+}
+
+function selectDate(date) {
+  currentDate = date;
+  currentPage = 1;
+  // Update button styles
+  document.querySelectorAll('.date-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === 'All Days' ? date === 'all' : b.getAttribute('onclick').includes(`'${date}'`));
+  });
+  loadDates();
+  refreshAll();
+}
+
+// ========== REFRESH ALL ==========
+function refreshAll() {
+  loadStats();
+  loadInsights();
+  loadFollowup();
+  loadTrends();
+  loadTOD();
+  loadScripts();
+  loadCalls();
+}
+
+// ========== KPI ==========
+async function loadStats() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+  if (currentDate !== 'all') params.set('date', currentDate);
+
+  const data = await fetchJSON(`${API}/stats?${params}`);
+  const kpiRow = document.getElementById('kpiRow');
+
+  const kpis = [
+    {label: 'Total Calls', value: data.total, delta: data.delta?.total},
+    {label: 'Accepted', value: data.accepted, delta: data.delta?.accepted, color: '#16a34a'},
+    {label: 'Conversion Rate', value: data.conversion_rate + '%', delta: data.delta?.conversion ? data.delta.conversion + 'pp' : null, color: '#3b82f6'},
+    {label: 'Voicemail', value: data.voicemail},
+    {label: 'Rejected', value: data.rejected, color: '#dc2626'},
+    {label: 'Callback', value: data.callback, color: '#f59e0b'},
+    {label: 'No Answer', value: data.no_answer},
+    {label: 'Avg Duration', value: Math.round(data.avg_duration) + 's'},
+  ];
+
+  kpiRow.innerHTML = kpis.map(k => {
+    let deltaHtml = '';
+    if (k.delta !== undefined && k.delta !== null) {
+      const num = parseFloat(k.delta);
+      const cls = num > 0 ? 'up' : num < 0 ? 'down' : 'neutral';
+      const sign = num > 0 ? '+' : '';
+      deltaHtml = `<div class="kpi-delta ${cls}">${sign}${k.delta} vs prev day</div>`;
+    }
+    return `<div class="kpi">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" ${k.color ? `style="color:${k.color}"` : ''}>${k.value}</div>
+      ${deltaHtml}
+    </div>`;
+  }).join('');
+}
+
+// ========== INSIGHTS ==========
+async function loadInsights() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+  if (currentDate !== 'all') params.set('date', currentDate);
+
+  const data = await fetchJSON(`${API}/insights?${params}`);
+  const container = document.getElementById('insightsContent');
+
+  if (!data.insights.length && !data.action_items.length) {
+    container.innerHTML = '<div class="empty-state">No data to analyze yet. Upload a CSV to get started.</div>';
+    return;
+  }
+
+  let html = data.insights.map(i => `<div class="insight ${i.type}">${i.text}</div>`).join('');
+  if (data.action_items.length) {
+    html += '<div style="margin-top:12px;font-size:12px;font-weight:600;color:#334155;margin-bottom:6px">Action Items:</div>';
+    html += data.action_items.map(a => `<div class="action-item">${a}</div>`).join('');
+  }
+  container.innerHTML = html;
+}
+
+// ========== FOLLOW-UP QUEUE ==========
+async function loadFollowup() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+
+  const data = await fetchJSON(`${API}/followup?${params}`);
+  const container = document.getElementById('followupContent');
+
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state">No callbacks pending.</div>';
+    return;
+  }
+
+  container.innerHTML = `<table class="fq-table">
+    <thead><tr><th>Status</th><th>Patient</th><th>EHR ID</th><th>Group</th><th>Reason</th><th>Summary</th><th>Date</th><th>Duration</th></tr></thead>
+    <tbody>${data.map(r => `<tr>
+      <td><span class="staleness-dot ${r.staleness}"></span>${r.staleness === 'fresh' ? 'Today' : r.staleness === 'aging' ? 'Yesterday' : r.days_ago + 'd ago'}</td>
+      <td><strong>${r.patient_name}</strong></td>
+      <td>${r.ehr_id}</td>
+      <td>${r.group}</td>
+      <td>${r.sub_category}</td>
+      <td class="cd-summary">${(r.summary || '').substring(0, 150)}</td>
+      <td>${formatDateShort(r.date)}</td>
+      <td>${r.duration || '-'}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ========== CHARTS ==========
+async function loadTrends() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+
+  const data = await fetchJSON(`${API}/trends?${params}`);
+
+  // Also get stats for donut/sub charts
+  const statsParams = new URLSearchParams();
+  if (currentGroup !== 'All') statsParams.set('group', currentGroup);
+  if (currentDate !== 'all') statsParams.set('date', currentDate);
+  const stats = await fetchJSON(`${API}/stats?${statsParams}`);
+
+  // Destroy existing charts
+  Object.values(charts).forEach(c => c.destroy && c.destroy());
+  charts = {};
+
+  if (!data.length) return;
+
+  const dates = data.map(d => formatDateShort(d.date));
+
+  // Conversion trend
+  charts.conv = new Chart(document.getElementById('convChart'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Conversion %',
+        data: data.map(d => d.conversion_rate),
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+      }]
+    },
+    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+      scales: {y: {beginAtZero: true, ticks: {callback: v => v + '%'}}}}
+  });
+
+  // Volume bars (stacked)
+  charts.vol = new Chart(document.getElementById('volChart'), {
+    type: 'bar',
+    data: {
+      labels: dates,
+      datasets: [
+        {label: 'Accepted', data: data.map(d => d.accepted), backgroundColor: '#22c55e'},
+        {label: 'Voicemail', data: data.map(d => d.voicemail), backgroundColor: '#3b82f6'},
+        {label: 'Rejected', data: data.map(d => d.rejected), backgroundColor: '#ef4444'},
+        {label: 'Callback', data: data.map(d => d.callback), backgroundColor: '#f59e0b'},
+        {label: 'No Answer', data: data.map(d => d.no_answer), backgroundColor: '#94a3b8'},
+        {label: 'Other', data: data.map(d => d.other), backgroundColor: '#fb923c'},
+      ]
+    },
+    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom', labels: {boxWidth: 10, font: {size: 10}}}},
+      scales: {x: {stacked: true}, y: {stacked: true, beginAtZero: true}}}
+  });
+
+  // Outcome donut
+  const outcomeEntries = Object.entries(stats.outcomes || {}).sort((a, b) => b[1] - a[1]);
+  charts.donut = new Chart(document.getElementById('donutChart'), {
+    type: 'doughnut',
+    data: {
+      labels: outcomeEntries.map(e => e[0]),
+      datasets: [{
+        data: outcomeEntries.map(e => e[1]),
+        backgroundColor: outcomeEntries.map(e => OUTCOME_CHART_COLORS[e[0]] || '#cbd5e1'),
+      }]
+    },
+    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'right', labels: {boxWidth: 10, font: {size: 10}}}}}
+  });
+
+  // Sub-category bar
+  const subEntries = Object.entries(stats.sub_categories || {}).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  charts.sub = new Chart(document.getElementById('subChart'), {
+    type: 'bar',
+    data: {
+      labels: subEntries.map(e => e[0].length > 25 ? e[0].substring(0, 25) + '...' : e[0]),
+      datasets: [{
+        data: subEntries.map(e => e[1]),
+        backgroundColor: '#6366f1',
+      }]
+    },
+    options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+      scales: {x: {beginAtZero: true}}}
+  });
+}
+
+// ========== TIME OF DAY ==========
+async function loadTOD() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+
+  const data = await fetchJSON(`${API}/tod?${params}`);
+  const container = document.getElementById('todContent');
+
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state">No time data available.</div>';
+    return;
+  }
+
+  const maxTotal = Math.max(...data.map(d => d.total));
+  container.innerHTML = `<div class="tod-grid">${data.map(d => {
+    const intensity = Math.max(0.1, d.total / maxTotal);
+    const convColor = d.conversion_rate > 20 ? '#16a34a' : d.conversion_rate > 10 ? '#f59e0b' : '#94a3b8';
+    return `<div class="tod-cell" style="background:rgba(59,130,246,${intensity * 0.3})">
+      <div class="hour">${formatHour(d.hour)}</div>
+      <div class="stats">${d.total} calls</div>
+      <div class="stats" style="color:${convColor};font-weight:600">${d.conversion_rate}%</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ========== SCRIPTS ==========
+async function loadScripts() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+
+  const data = await fetchJSON(`${API}/scripts?${params}`);
+  const container = document.getElementById('scriptsContent');
+
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state">Not enough data for script comparison.</div>';
+    return;
+  }
+
+  const bestConv = Math.max(...data.map(d => d.conversion_rate));
+
+  container.innerHTML = `<table class="script-table">
+    <thead><tr><th>Task/Script</th><th>Workflow</th><th>Total</th><th>Accepted</th><th>Conv %</th><th>Rejected</th><th>VM</th><th>Avg Dur</th><th></th></tr></thead>
+    <tbody>${data.map(r => `<tr>
+      <td><strong>${r.task}</strong></td>
+      <td>${r.workflow}</td>
+      <td>${r.total}</td>
+      <td>${r.accepted}</td>
+      <td style="font-weight:600;color:${r.conversion_rate > 20 ? '#16a34a' : r.conversion_rate > 10 ? '#f59e0b' : '#64748b'}">${r.conversion_rate}%</td>
+      <td>${r.rejected}</td>
+      <td>${r.voicemail}</td>
+      <td>${Math.round(r.avg_duration)}s</td>
+      <td>${r.conversion_rate === bestConv && bestConv > 0 ? '<span class="winner-badge">BEST</span>' : ''}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+// ========== CALL DETAILS ==========
+async function loadCalls() {
+  const params = new URLSearchParams();
+  if (currentGroup !== 'All') params.set('group', currentGroup);
+  if (currentDate !== 'all') params.set('date', currentDate);
+  if (searchTerm) params.set('search', searchTerm);
+  params.set('page', currentPage);
+  params.set('per_page', 25);
+
+  const data = await fetchJSON(`${API}/calls?${params}`);
+  const container = document.getElementById('callsContent');
+
+  if (!data.calls.length) {
+    container.innerHTML = '<div class="empty-state">No calls found. Upload a CSV to get started.</div>';
+    return;
+  }
+
+  let html = `<table class="cd-table">
+    <thead><tr><th>Patient</th><th>EHR ID</th><th>Date/Time</th><th>Duration</th><th>Workflow</th><th>Outcome</th><th>Sub-Category</th><th>Summary</th></tr></thead>
+    <tbody>${data.calls.map(c => `<tr>
+      <td><strong>${c.patient_name}</strong></td>
+      <td>${c.patient_ehr_id}</td>
+      <td>${c.call_datetime ? formatDateTime(c.call_datetime) : '-'}</td>
+      <td>${c.duration_display || '-'}</td>
+      <td>${c.workflow_group}</td>
+      <td><span class="pill" style="background:${OUTCOME_COLORS[c.outcome] || '#e2e8f0'}">${c.outcome}</span></td>
+      <td>${c.sub_category}</td>
+      <td class="cd-summary">${(c.summary || '').substring(0, 200)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+
+  // Pagination
+  html += `<div class="pagination">
+    <button ${data.page <= 1 ? 'disabled' : ''} onclick="goPage(${data.page - 1})">← Prev</button>
+    <span>Page ${data.page} of ${data.total_pages} (${data.total} calls)</span>
+    <button ${data.page >= data.total_pages ? 'disabled' : ''} onclick="goPage(${data.page + 1})">Next →</button>
+  </div>`;
+
+  container.innerHTML = html;
+}
+
+function goPage(p) {
+  currentPage = p;
+  loadCalls();
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    searchTerm = document.getElementById('searchInput').value;
+    currentPage = 1;
+    loadCalls();
+  }, 300);
+}
+
+// ========== CSV UPLOAD ==========
+async function uploadCSV() {
+  const fileInput = document.getElementById('csvFile');
+  const status = document.getElementById('uploadStatus');
+  if (!fileInput.files.length) {
+    status.textContent = 'Please select a file.';
+    return;
+  }
+  status.textContent = 'Uploading...';
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+
+  try {
+    const res = await fetch(`${API}/upload`, {method: 'POST', body: formData});
+    const data = await res.json();
+    status.textContent = `Done! ${data.inserted} inserted, ${data.skipped} skipped (of ${data.total} rows)`;
+    // Refresh everything
+    await loadGroups();
+    await loadDates();
+    refreshAll();
+  } catch (e) {
+    status.textContent = 'Upload failed: ' + e.message;
+  }
+}
+
+// ========== HELPERS ==========
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
+    return await res.json();
+  } catch (e) {
+    console.error('Fetch error:', url, e);
+    return {};
+  }
+}
+
+function formatDateShort(dateStr) {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+}
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  return d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) + ' ' +
+    d.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
+}
+
+function formatHour(h) {
+  if (h === 0) return '12 AM';
+  if (h < 12) return h + ' AM';
+  if (h === 12) return '12 PM';
+  return (h - 12) + ' PM';
+}
+
+// Start
+init();
+</script>
+</body>
+</html>

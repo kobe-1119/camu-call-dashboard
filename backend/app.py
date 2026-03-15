@@ -2,12 +2,14 @@
 import os
 import tempfile
 import math
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from typing import Optional
+from pydantic import BaseModel
 from .database import get_db, init_db
 from .ingest import ingest_file
+from .auth import require_auth, verify_password, create_token
 
 app = FastAPI(title="Camu Health Call Dashboard API")
 
@@ -39,8 +41,28 @@ def startup():
     init_db()
 
 
+# ========== AUTH ENDPOINTS (public) ==========
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+@app.post("/api/login")
+def login(req: LoginRequest):
+    if not verify_password(req.password):
+        return JSONResponse(status_code=401, content={"detail": "Invalid password"})
+    token = create_token()
+    response = JSONResponse(content={"token": token})
+    response.set_cookie(
+        key="token", value=token, httponly=True, samesite="strict", max_age=43200
+    )
+    return response
+
+
+# ========== PROTECTED ENDPOINTS ==========
+
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file_endpoint(file: UploadFile = File(...), _=Depends(require_auth)):
     """Upload and ingest a raw call CSV or XLSX."""
     suffix = ".xlsx" if file.filename and file.filename.endswith(".xlsx") else ".csv"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -55,7 +77,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @app.get("/api/dates")
-def get_dates():
+def get_dates(_=Depends(require_auth)):
     """Get all available dates."""
     db = get_db()
     rows = db.execute(
@@ -66,7 +88,7 @@ def get_dates():
 
 
 @app.get("/api/groups")
-def get_groups():
+def get_groups(_=Depends(require_auth)):
     """Get all workflow groups with call counts."""
     db = get_db()
     rows = db.execute(
@@ -94,8 +116,9 @@ def _build_where(group: Optional[str], date: Optional[str]):
 def get_stats(
     group: Optional[str] = Query(None),
     date: Optional[str] = Query(None),
+    _=Depends(require_auth),
 ):
-    """KPI aggregations: total calls, accepted, rejected, VM, callback, no answer, avg duration, conversion rate."""
+    """KPI aggregations."""
     db = get_db()
     where, params = _build_where(group, date)
 
@@ -116,7 +139,6 @@ def get_stats(
     accepted = row["accepted"] or 0
     conversion = round(accepted / total * 100, 1) if total > 0 else 0
 
-    # Day-over-day delta (compare to previous day if specific date selected)
     delta = {}
     if date and date != "all":
         prev_row = db.execute(f"""
@@ -151,13 +173,11 @@ def get_stats(
         "sub_categories": {},
     }
 
-    # Outcome breakdown
     outcomes = db.execute(f"""
         SELECT outcome, COUNT(*) as cnt FROM calls WHERE {where} GROUP BY outcome ORDER BY cnt DESC
     """, params).fetchall()
     result["outcomes"] = {r["outcome"]: r["cnt"] for r in outcomes}
 
-    # Sub-category breakdown
     subs = db.execute(f"""
         SELECT sub_category, COUNT(*) as cnt FROM calls WHERE {where} GROUP BY sub_category ORDER BY cnt DESC
     """, params).fetchall()
@@ -168,7 +188,7 @@ def get_stats(
 
 
 @app.get("/api/trends")
-def get_trends(group: Optional[str] = Query(None)):
+def get_trends(group: Optional[str] = Query(None), _=Depends(require_auth)):
     """Daily trend data for charts."""
     db = get_db()
     group_clause = "AND workflow_group = ?" if group and group != "All" else ""
@@ -218,6 +238,7 @@ def get_calls(
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
+    _=Depends(require_auth),
 ):
     """Paginated call details with search."""
     db = get_db()
@@ -228,11 +249,9 @@ def get_calls(
         s = f"%{search}%"
         params.extend([s, s, s, s, s])
 
-    # Count
     count_row = db.execute(f"SELECT COUNT(*) as cnt FROM calls WHERE {where}", params).fetchone()
     total_count = count_row["cnt"]
 
-    # Fetch page
     offset = (page - 1) * per_page
     rows = db.execute(f"""
         SELECT id, patient_name, patient_ehr_id, from_number, to_number,
@@ -256,7 +275,7 @@ def get_calls(
 
 
 @app.get("/api/followup")
-def get_followup(group: Optional[str] = Query(None)):
+def get_followup(group: Optional[str] = Query(None), _=Depends(require_auth)):
     """Follow-up queue: callbacks with staleness tracking."""
     db = get_db()
     group_clause = "AND workflow_group = ?" if group and group != "All" else ""
@@ -299,8 +318,8 @@ def get_followup(group: Optional[str] = Query(None)):
 
 
 @app.get("/api/tod")
-def get_time_of_day(group: Optional[str] = Query(None)):
-    """Time-of-day analysis: calls and conversions by hour."""
+def get_time_of_day(group: Optional[str] = Query(None), _=Depends(require_auth)):
+    """Time-of-day analysis."""
     db = get_db()
     group_clause = "AND workflow_group = ?" if group and group != "All" else ""
     group_params = [group] if group and group != "All" else []
@@ -332,8 +351,8 @@ def get_time_of_day(group: Optional[str] = Query(None)):
 
 
 @app.get("/api/scripts")
-def get_scripts(group: Optional[str] = Query(None)):
-    """Script/template comparison: effectiveness by workflow task."""
+def get_scripts(group: Optional[str] = Query(None), _=Depends(require_auth)):
+    """Script/template comparison."""
     db = get_db()
     group_clause = "AND workflow_group = ?" if group and group != "All" else ""
     group_params = [group] if group and group != "All" else []
@@ -377,6 +396,7 @@ def get_scripts(group: Optional[str] = Query(None)):
 def get_insights(
     group: Optional[str] = Query(None),
     date: Optional[str] = Query(None),
+    _=Depends(require_auth),
 ):
     """AI-generated action items and insights."""
     db = get_db()
@@ -413,7 +433,6 @@ def get_insights(
     insights = []
     action_items = []
 
-    # Conversion rate assessment
     if conversion > 30:
         insights.append({"type": "success", "text": f"Strong conversion rate at {conversion}% — well above target."})
     elif conversion > 15:
@@ -423,17 +442,14 @@ def get_insights(
     else:
         insights.append({"type": "danger", "text": f"Very low conversion rate at {conversion}%. Immediate attention needed."})
 
-    # Voicemail rate
     if vm_rate > 40:
         insights.append({"type": "warning", "text": f"High voicemail rate ({vm_rate}%). Consider adjusting call times."})
         action_items.append("Analyze optimal calling hours to reduce voicemail rate")
 
-    # No-answer rate
     if na_rate > 25:
         insights.append({"type": "warning", "text": f"High no-answer rate ({na_rate}%). Patients may not be picking up."})
         action_items.append("Review caller ID display and call timing strategy")
 
-    # Rejection breakdown
     if rejected > 0:
         rej_subs = db.execute(f"""
             SELECT sub_category, COUNT(*) as cnt FROM calls
@@ -452,16 +468,13 @@ def get_insights(
         if any(r["sub_category"] == "Suspicious of call/AI" for r in rej_subs):
             action_items.append("Consider improving call script trust-building language")
 
-    # Callbacks
     if callback > 0:
         action_items.append(f"{callback} patients requested callbacks — ensure follow-up is scheduled")
 
-    # Language barrier
     if lang_barrier > 0:
         insights.append({"type": "info", "text": f"{lang_barrier} calls had language barriers."})
         action_items.append("Consider adding multilingual agent support")
 
-    # Day-over-day comparison
     if date and date != "all":
         prev = db.execute(f"""
             SELECT
@@ -484,8 +497,7 @@ def get_insights(
     return {"insights": insights, "action_items": action_items}
 
 
-# Serve frontend
-from fastapi.responses import FileResponse
+# ========== FRONTEND ==========
 
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 
@@ -493,3 +505,8 @@ frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 @app.get("/")
 def serve_frontend():
     return FileResponse(os.path.join(frontend_dir, "index.html"))
+
+
+@app.get("/login")
+def serve_login():
+    return FileResponse(os.path.join(frontend_dir, "login.html"))

@@ -124,7 +124,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <h1>Camu Health — Call Analysis Dashboard</h1>
     <div class="sub">Confido Call Center Analytics</div>
   </div>
-  <div class="badge" id="totalBadge">Loading...</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="badge" id="totalBadge">Loading...</div>
+    <button onclick="logout()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:4px 12px;border-radius:16px;font-size:11px;cursor:pointer">Logout</button>
+  </div>
 </div>
 
 <div class="layout">
@@ -200,6 +203,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 
 <script>
+// ========== AUTH CHECK ==========
+const TOKEN = localStorage.getItem('token');
+if (!TOKEN) {
+  window.location.href = '/login';
+}
+
 const API = window.location.origin + '/api';
 let currentGroup = 'All';
 let currentDate = 'all';
@@ -623,7 +632,7 @@ async function uploadCSV() {
   formData.append('file', fileInput.files[0]);
 
   try {
-    const res = await fetch(`${API}/upload`, {method: 'POST', body: formData});
+    const res = await fetch(`${API}/upload`, {method: 'POST', body: formData, headers: {'Authorization': 'Bearer ' + TOKEN}});
     const data = await res.json();
     status.textContent = `Done! ${data.inserted} inserted, ${data.skipped} skipped (of ${data.total} rows)`;
     // Refresh everything
@@ -638,7 +647,14 @@ async function uploadCSV() {
 // ========== HELPERS ==========
 async function fetchJSON(url) {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: {'Authorization': 'Bearer ' + TOKEN}
+    });
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      return {};
+    }
     return await res.json();
   } catch (e) {
     console.error('Fetch error:', url, e);
@@ -664,6 +680,11 @@ function formatHour(h) {
   if (h < 12) return h + ' AM';
   if (h === 12) return '12 PM';
   return (h - 12) + ' PM';
+}
+
+function logout() {
+  localStorage.removeItem('token');
+  window.location.href = '/login';
 }
 
 // Start

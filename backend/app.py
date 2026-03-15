@@ -47,6 +47,17 @@ class LoginRequest(BaseModel):
     password: str
 
 
+@app.get("/api/health")
+def health():
+    """Debug: check if env vars are set (does not reveal values)."""
+    import os
+    return {
+        "password_set": bool(os.environ.get("DASHBOARD_PASSWORD")),
+        "hash_set": bool(os.environ.get("DASHBOARD_PASSWORD_HASH")),
+        "jwt_secret_set": bool(os.environ.get("JWT_SECRET")),
+    }
+
+
 @app.post("/api/login")
 def login(req: LoginRequest):
     if not verify_password(req.password):

@@ -1,25 +1,61 @@
 """FastAPI application with all dashboard API endpoints."""
 import os
+import time
 import tempfile
 import math
-from fastapi import FastAPI, UploadFile, File, Query, Depends
+from collections import defaultdict
+from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Optional
 from pydantic import BaseModel
 from .database import get_db, init_db
 from .ingest import ingest_file
 from .auth import require_auth, verify_password, create_token
 
-app = FastAPI(title="Camu Health Call Dashboard API")
+app = FastAPI(title="Call Dashboard API", docs_url=None, redoc_url=None)
+
+
+# ========== SECURITY HEADERS ==========
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[os.environ.get("ALLOWED_ORIGIN", "*")],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+# ========== LOGIN RATE LIMITING ==========
+login_attempts = defaultdict(list)
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+
+
+def check_rate_limit(ip: str) -> bool:
+    """Returns True if rate limited."""
+    now = time.time()
+    # Clean old attempts
+    login_attempts[ip] = [t for t in login_attempts[ip] if now - t < LOGIN_WINDOW_SECONDS]
+    return len(login_attempts[ip]) >= MAX_LOGIN_ATTEMPTS
+
+
+def record_attempt(ip: str):
+    login_attempts[ip].append(time.time())
 
 OUTCOME_COLORS = {
     "Accepted appointment": "#C6EFCE",
@@ -47,20 +83,13 @@ class LoginRequest(BaseModel):
     password: str
 
 
-@app.get("/api/health")
-def health():
-    """Debug: check if env vars are set (does not reveal values)."""
-    import os
-    return {
-        "password_set": bool(os.environ.get("DASHBOARD_PASSWORD")),
-        "hash_set": bool(os.environ.get("DASHBOARD_PASSWORD_HASH")),
-        "jwt_secret_set": bool(os.environ.get("JWT_SECRET")),
-    }
-
-
 @app.post("/api/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    if check_rate_limit(ip):
+        return JSONResponse(status_code=429, content={"detail": "Too many attempts. Try again in 5 minutes."})
     if not verify_password(req.password):
+        record_attempt(ip)
         return JSONResponse(status_code=401, content={"detail": "Invalid password"})
     token = create_token()
     response = JSONResponse(content={"token": token})
@@ -265,7 +294,7 @@ def get_calls(
 
     offset = (page - 1) * per_page
     rows = db.execute(f"""
-        SELECT id, patient_name, patient_ehr_id, from_number, to_number,
+        SELECT id, patient_name, patient_ehr_id,
                call_datetime, call_date, call_hour, duration_seconds, duration_display,
                workflow_name, workflow_group, workflow_task,
                outcome, sub_category, summary

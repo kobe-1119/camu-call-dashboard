@@ -441,7 +441,7 @@ async function loadTrends() {
 
   const dates = data.map(d => formatDateShort(d.date));
 
-  // Conversion trend
+  // Conversion trend — show accepted count + total on hover
   charts.conv = new Chart(document.getElementById('convChart'), {
     type: 'line',
     data: {
@@ -456,11 +456,17 @@ async function loadTrends() {
         pointRadius: 4,
       }]
     },
-    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+    options: {responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false}, tooltip: {callbacks: {
+        label: (ctx) => {
+          const d = data[ctx.dataIndex];
+          return `${d.conversion_rate}% (${d.accepted} of ${d.total} calls)`;
+        }
+      }}},
       scales: {y: {beginAtZero: true, ticks: {callback: v => v + '%'}}}}
   });
 
-  // Volume bars (stacked)
+  // Volume bars (stacked) — show count + % of day total on hover
   charts.vol = new Chart(document.getElementById('volChart'), {
     type: 'bar',
     data: {
@@ -474,36 +480,69 @@ async function loadTrends() {
         {label: 'Other', data: data.map(d => d.other), backgroundColor: '#fb923c'},
       ]
     },
-    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom', labels: {boxWidth: 10, font: {size: 10}}}},
+    options: {responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {position: 'bottom', labels: {boxWidth: 10, font: {size: 10}}},
+        tooltip: {callbacks: {
+          label: (ctx) => {
+            const total = data[ctx.dataIndex].total;
+            const val = ctx.raw;
+            const pct = total > 0 ? (val / total * 100).toFixed(1) : 0;
+            return `${ctx.dataset.label}: ${val} (${pct}% of ${total})`;
+          }
+        }}},
       scales: {x: {stacked: true}, y: {stacked: true, beginAtZero: true}}}
   });
 
-  // Outcome donut
+  // Outcome donut — show count + % in labels and tooltip
   const outcomeEntries = Object.entries(stats.outcomes || {}).sort((a, b) => b[1] - a[1]);
+  const outcomeTotal = outcomeEntries.reduce((s, e) => s + e[1], 0);
   charts.donut = new Chart(document.getElementById('donutChart'), {
     type: 'doughnut',
     data: {
-      labels: outcomeEntries.map(e => e[0]),
+      labels: outcomeEntries.map(e => {
+        const pct = outcomeTotal > 0 ? (e[1] / outcomeTotal * 100).toFixed(1) : 0;
+        return `${e[0]} (${pct}%)`;
+      }),
       datasets: [{
         data: outcomeEntries.map(e => e[1]),
         backgroundColor: outcomeEntries.map(e => OUTCOME_CHART_COLORS[e[0]] || '#cbd5e1'),
       }]
     },
-    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'right', labels: {boxWidth: 10, font: {size: 10}}}}}
+    options: {responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {position: 'right', labels: {boxWidth: 10, font: {size: 10}}},
+        tooltip: {callbacks: {
+          label: (ctx) => {
+            const val = ctx.raw;
+            const pct = outcomeTotal > 0 ? (val / outcomeTotal * 100).toFixed(1) : 0;
+            return `${val} calls (${pct}%)`;
+          }
+        }}}}
   });
 
-  // Sub-category bar
+  // Sub-category bar — show count + % of total
   const subEntries = Object.entries(stats.sub_categories || {}).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const subTotal = Object.values(stats.sub_categories || {}).reduce((s, v) => s + v, 0);
   charts.sub = new Chart(document.getElementById('subChart'), {
     type: 'bar',
     data: {
-      labels: subEntries.map(e => e[0].length > 25 ? e[0].substring(0, 25) + '...' : e[0]),
+      labels: subEntries.map(e => {
+        const pct = subTotal > 0 ? (e[1] / subTotal * 100).toFixed(1) : 0;
+        const name = e[0].length > 25 ? e[0].substring(0, 25) + '...' : e[0];
+        return `${name} (${pct}%)`;
+      }),
       datasets: [{
         data: subEntries.map(e => e[1]),
         backgroundColor: '#6366f1',
       }]
     },
-    options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+    options: {indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false}, tooltip: {callbacks: {
+        label: (ctx) => {
+          const val = ctx.raw;
+          const pct = subTotal > 0 ? (val / subTotal * 100).toFixed(1) : 0;
+          return `${val} calls (${pct}% of total)`;
+        }
+      }}},
       scales: {x: {beginAtZero: true}}}
   });
 }
